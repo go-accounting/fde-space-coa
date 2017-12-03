@@ -41,13 +41,20 @@ func (s *integrations) Get(txid string) (*fde.Transaction, error) {
 	}
 	ch, errch := ts.Transactions()
 	var result *fde.Transaction
+	var removed bool
 	for t := range ch {
 		result, err = s.debTransactionToFdeTransaction(t)
+		if result.Removes != "" {
+			removed = true
+		}
 	}
 	if err == nil {
 		err = <-errch
 	} else {
 		<-errch
+	}
+	if removed {
+		result = nil
 	}
 	return result, err
 }
@@ -60,8 +67,17 @@ func (s *integrations) Append(tt ...*fde.Transaction) ([]string, error) {
 	go func() {
 		var err error
 		for i, t := range tt {
+			moment := deb.MomentFromTime(now) + deb.Moment(i)
+			if t.Removes != "" {
+				var im int
+				im, err = strconv.Atoi(t.Removes)
+				if err != nil {
+					break
+				}
+				moment = deb.Moment(im)
+			}
 			var dt *deb.Transaction
-			dt, err = s.fdeTransactionToDebTransaction(t, deb.MomentFromTime(now)+deb.Moment(i))
+			dt, err = s.fdeTransactionToDebTransaction(t, moment)
 			if err != nil {
 				break
 			}
