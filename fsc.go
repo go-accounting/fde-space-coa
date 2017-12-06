@@ -112,6 +112,14 @@ func (i *integrations) debTransactionToFdeTransaction(t *deb.Transaction) (*fde.
 	if err != nil {
 		return nil, err
 	}
+	accountIds := make([]string, len(aa))
+	for i, a := range aa {
+		accountIds[i] = a.Id
+	}
+	indexes, err := i.cr.Indexes(*i.coaid, accountIds, nil)
+	if err != nil {
+		return nil, err
+	}
 	d := t.Date.ToTime()
 	m := t.Moment.ToTime()
 	buf := bytes.NewBuffer(t.Metadata)
@@ -120,20 +128,27 @@ func (i *integrations) debTransactionToFdeTransaction(t *deb.Transaction) (*fde.
 	if err := dec.Decode(&tm); err != nil {
 		return nil, err
 	}
-	deb := fde.Entries{}
+	debits := fde.Entries{}
 	cre := fde.Entries{}
 	for k, v := range t.Entries {
+		var a *coa.Account
+		for i := range indexes {
+			if k-1 == deb.Account(indexes[i]) {
+				a = aa[i]
+				break
+			}
+		}
 		if v > 0 {
-			deb = append(deb, fde.Entry{Account: aa[k-1].Id, Value: v})
+			debits = append(debits, fde.Entry{Account: a.Id, Value: v})
 		} else {
-			cre = append(cre, fde.Entry{Account: aa[k-1].Id, Value: -v})
+			cre = append(cre, fde.Entry{Account: a.Id, Value: -v})
 		}
 	}
 	removes := ""
 	if tm.Removes != -1 {
 		removes = strconv.Itoa(int(tm.Removes))
 	}
-	return &fde.Transaction{Id: fmt.Sprint(t.Moment), Date: d, AsOf: m, Debits: deb, Credits: cre,
+	return &fde.Transaction{Id: fmt.Sprint(t.Moment), Date: d, AsOf: m, Debits: debits, Credits: cre,
 			Memo: tm.Memo, Tags: tm.Tags, User: tm.User, Removes: removes},
 		nil
 }
